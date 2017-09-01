@@ -4,28 +4,34 @@ import (
 	"log"
 	"net"
 
-	"github.com/alextanhongpin/grpc-openid/app"
-	pb "github.com/alextanhongpin/grpc-openid/auth"
-	"github.com/alextanhongpin/grpc-openid/model"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+
+	"github.com/alextanhongpin/grpc-openid/app/database"
+	"github.com/alextanhongpin/grpc-openid/app/queue"
+	pb "github.com/alextanhongpin/grpc-openid/auth"
+	"github.com/alextanhongpin/grpc-openid/model"
 )
 
 type authserver struct{}
 
-var env *app.Environment
+type Environment struct {
+	Database *database.Database
+	Queue    *queue.Queue
+}
+
+var env Environment
 
 func (s *authserver) Login(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthResponse, error) {
-	log.Println("at login route!")
+	log.Println("at login route!", msg)
 
-	userID := "random"
 	user := model.User{
-		UserID:   userID,
-		Email:    "john.doe@mail.com",
-		Password: "123456",
+		Email:    msg.Email,
+		Password: msg.Password,
 	}
 
-	if err := env.Database.Ref.Where("email = ?", user.Email).Find(&user).Error; err != nil || user.UserID != "" {
+	if err := env.Database.Ref.Where("email = ?", user.Email).Find(&user).Error; err == nil {
+		log.Println("found user", user, err)
 		return &pb.AuthResponse{
 			Error:            "Unauthorized",
 			ErrorDescription: "User already exists",
@@ -39,11 +45,11 @@ func (s *authserver) Login(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthRe
 		}, nil
 	}
 
-	env.Queue.Ref.Publish("foo", []byte("hello world"))
+	env.Queue.Ref.Publish("NewUser", user)
 
 	return &pb.AuthResponse{
 		AccessToken: "1234567890",
-		UserId:      userID,
+		Id:          string(user.ID),
 	}, nil
 }
 
@@ -53,15 +59,20 @@ func (s *authserver) Register(ctx context.Context, msg *pb.AuthRequest) (*pb.Aut
 		Error:            "",
 		ErrorDescription: "",
 		AccessToken:      "",
-		UserId:           "",
+		Id:               "",
 	}, nil
 }
 
 func main() {
 	var err error
-	env = app.New()
+	env = Environment{
+		Database: database.New(),
+		Queue:    queue.New(),
+	}
 	// Remember to close the database
 	defer env.Database.Ref.Close()
+
+	defer env.Queue.Ref.Close()
 
 	// Automigrate
 	env.Database.Ref.AutoMigrate(&model.User{})
