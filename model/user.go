@@ -8,3 +8,7 @@ type User struct {
 	Email    string
 	Password string
 }
+
+// type WebhookUser struct {
+// 	Email string
+// }

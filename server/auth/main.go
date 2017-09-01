@@ -11,10 +11,12 @@ import (
 	"github.com/alextanhongpin/grpc-openid/app/queue"
 	pb "github.com/alextanhongpin/grpc-openid/auth"
 	"github.com/alextanhongpin/grpc-openid/model"
+	"github.com/alextanhongpin/grpc-openid/utils/password"
 )
 
 type authserver struct{}
 
+// Environment defines the application dependencies
 type Environment struct {
 	Database *database.Database
 	Queue    *queue.Queue
@@ -23,20 +25,52 @@ type Environment struct {
 var env Environment
 
 func (s *authserver) Login(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthResponse, error) {
-	log.Println("at login route!", msg)
-
+	hash, err := password.Generate(msg.Password)
+	if err != nil {
+		return &pb.AuthResponse{
+			Error:            "Internal Server Error",
+			ErrorDescription: "Error comparing password",
+		}, err
+	}
 	user := model.User{
 		Email:    msg.Email,
-		Password: msg.Password,
+		Password: hash,
+	}
+
+	if err := env.Database.Ref.Where("email = ? AND password = ?", user.Email, user.Password).Find(&user).Error; err != nil {
+		return &pb.AuthResponse{
+			Error:            "Unauthorized",
+			ErrorDescription: "Email or password is incorrect",
+		}, nil
+	}
+
+	return &pb.AuthResponse{
+		AccessToken: "123456",
+		Id:          string(user.ID),
+	}, nil
+}
+
+func (s *authserver) Register(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthResponse, error) {
+	user := model.User{
+		Email: msg.Email,
 	}
 
 	if err := env.Database.Ref.Where("email = ?", user.Email).Find(&user).Error; err == nil {
-		log.Println("found user", user, err)
 		return &pb.AuthResponse{
 			Error:            "Unauthorized",
 			ErrorDescription: "User already exists",
 		}, nil
 	}
+
+	hash, err := password.Generate(msg.Password)
+	if err != nil {
+		return &pb.AuthResponse{
+			Error:            "Internal Server Error",
+			ErrorDescription: "Error generating password hash",
+		}, err
+	}
+
+	user.Password = hash
 
 	if err := env.Database.Ref.Create(&user).Error; err != nil {
 		return &pb.AuthResponse{
@@ -45,6 +79,7 @@ func (s *authserver) Login(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthRe
 		}, nil
 	}
 
+	// Publish webhook event, should do a feature toggle here
 	env.Queue.Ref.Publish("NewUser", user)
 
 	return &pb.AuthResponse{
@@ -53,26 +88,18 @@ func (s *authserver) Login(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthRe
 	}, nil
 }
 
-func (s *authserver) Register(ctx context.Context, msg *pb.AuthRequest) (*pb.AuthResponse, error) {
-	log.Println("at login route!")
-	return &pb.AuthResponse{
-		Error:            "",
-		ErrorDescription: "",
-		AccessToken:      "",
-		Id:               "",
-	}, nil
-}
-
 func main() {
-	var err error
-	env = Environment{
-		Database: database.New(),
-		Queue:    queue.New(),
-	}
-	// Remember to close the database
-	defer env.Database.Ref.Close()
 
-	defer env.Queue.Ref.Close()
+	db := database.New()
+	defer db.Ref.Close()
+
+	q := queue.New()
+	defer q.Ref.Close()
+
+	env = Environment{
+		Database: db,
+		Queue:    q,
+	}
 
 	// Automigrate
 	env.Database.Ref.AutoMigrate(&model.User{})
