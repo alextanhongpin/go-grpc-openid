@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	gw "github.com/alextanhongpin/grpc-openid/auth"
+	gw "github.com/alextanhongpin/grpc-openid/proto/auth"
 	"github.com/golang/glog"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"google.golang.org/grpc"

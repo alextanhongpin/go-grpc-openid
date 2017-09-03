@@ -9,8 +9,8 @@ import (
 
 	"github.com/alextanhongpin/grpc-openid/app/database"
 	"github.com/alextanhongpin/grpc-openid/app/queue"
-	pb "github.com/alextanhongpin/grpc-openid/auth"
 	"github.com/alextanhongpin/grpc-openid/model"
+	pb "github.com/alextanhongpin/grpc-openid/proto/auth"
 	"github.com/alextanhongpin/grpc-openid/utils/password"
 )
 
